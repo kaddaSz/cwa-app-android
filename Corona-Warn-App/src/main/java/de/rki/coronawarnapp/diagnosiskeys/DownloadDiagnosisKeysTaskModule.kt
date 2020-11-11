@@ -16,5 +16,5 @@ abstract class DownloadDiagnosisKeysTaskModule {
     @TaskTypeKey(DownloadDiagnosisKeysTask::class)
     abstract fun downloadDiagnosisKeysTaskFactory(
         factory: DownloadDiagnosisKeysTask.Factory
-    ): TaskFactory<out Task.Progress, out Task.Result>
+    ): TaskFactory<out Task.Progress, out DownloadDiagnosisKeysTask.Result>
 }

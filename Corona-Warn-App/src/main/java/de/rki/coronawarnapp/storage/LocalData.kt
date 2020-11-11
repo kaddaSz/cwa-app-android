@@ -25,6 +25,9 @@ object LocalData {
 
     private const val PREFERENCE_HAS_RISK_STATUS_LOWERED =
         "preference_has_risk_status_lowered"
+
+    private const val KEY_CURRENT_CONFIG_ID = "config_id"
+
     /****************************************************
      * ONBOARDING DATA
      ****************************************************/
@@ -443,6 +446,15 @@ object LocalData {
                     .getString(R.string.preference_timestamp_risk_level_calculation),
                 value ?: 0L
             )
+        }
+    }
+
+    fun currentConfigIdentifier(): String? =
+        getSharedPreferenceInstance().getString(KEY_CURRENT_CONFIG_ID, null)
+
+    fun currentConfigIdentifier(value: String?) {
+        getSharedPreferenceInstance().edit(true) {
+            putString(KEY_CURRENT_CONFIG_ID, value)
         }
     }
 

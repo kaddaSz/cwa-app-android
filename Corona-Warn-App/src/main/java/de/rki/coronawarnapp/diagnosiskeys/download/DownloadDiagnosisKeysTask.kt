@@ -36,7 +36,7 @@ class DownloadDiagnosisKeysTask @Inject constructor(
     private val appConfigProvider: AppConfigProvider,
     private val keyPackageSyncTool: KeyPackageSyncTool,
     private val timeStamper: TimeStamper
-) : Task<DownloadDiagnosisKeysTask.Progress, Task.Result> {
+) : Task<DownloadDiagnosisKeysTask.Progress, DownloadDiagnosisKeysTask.Result> {
 
     private val internalProgress = ConflatedBroadcastChannel<Progress>()
     override val progress: Flow<Progress> = internalProgress.asFlow()
@@ -44,14 +44,15 @@ class DownloadDiagnosisKeysTask @Inject constructor(
     private var isCanceled = false
 
     @Suppress("LongMethod")
-    override suspend fun run(arguments: Task.Arguments): Task.Result {
+    override suspend fun run(arguments: Task.Arguments): Result {
         val rollbackItems = mutableListOf<RollbackItem>()
         try {
             Timber.d("Running with arguments=%s", arguments)
             arguments as Arguments
+            val result = Result()
 
             if (arguments.withConstraints) {
-                if (!noKeysFetchedToday()) return object : Task.Result {}
+                if (!noKeysFetchedToday()) return result
             }
 
             /**
@@ -61,7 +62,7 @@ class DownloadDiagnosisKeysTask @Inject constructor(
              */
             if (!InternalExposureNotificationClient.asyncIsEnabled()) {
                 Timber.tag(TAG).w("EN is not enabled, skipping RetrieveDiagnosisKeys")
-                return object : Task.Result {}
+                return result
             }
 
             throwIfCancelled()
@@ -75,7 +76,15 @@ class DownloadDiagnosisKeysTask @Inject constructor(
             throwIfCancelled()
 
             // RETRIEVE RISK SCORE PARAMETERS
-            val exposureConfig: ExposureDetectionConfig = appConfigProvider.getAppConfig()
+            val lastConfigId = LocalData.currentConfigIdentifier()
+            val exposureConfig = appConfigProvider.getAppConfig()
+            result.configChanged = lastConfigId != exposureConfig.identifier
+            if (result.configChanged) {
+                rollbackItems.add {
+                    LocalData.currentConfigIdentifier(lastConfigId)
+                }
+                LocalData.currentConfigIdentifier(exposureConfig.identifier)
+            }
 
             internalProgress.send(Progress.ApiSubmissionStarted)
             internalProgress.send(Progress.KeyFilesDownloadStarted)
@@ -89,17 +98,17 @@ class DownloadDiagnosisKeysTask @Inject constructor(
 
             if (exposureConfig.maxExposureDetectionsPerUTCDay == 0) {
                 Timber.tag(TAG).w("Exposure detections are disabled! maxExposureDetectionsPerUTCDay=0")
-                return object : Task.Result {}
+                return result
             }
 
             if (wasLastDetectionPerformedRecently(now, exposureConfig, trackedExposureDetections)) {
                 // At most one detection every 6h
-                return object : Task.Result {}
+                return result
             }
 
             if (hasRecentDetectionAndNoNewFiles(now, keySyncResult, trackedExposureDetections)) {
                 //  Last check was within 24h, and there are no new files.
-                return object : Task.Result {}
+                return result
             }
 
             val availableKeyFiles = keySyncResult.availableKeys.map { it.path }
@@ -127,7 +136,7 @@ class DownloadDiagnosisKeysTask @Inject constructor(
                 saveTimestamp(currentDate, rollbackItems)
             }
 
-            return object : Task.Result {}
+            return result
         } catch (error: Exception) {
             Timber.tag(TAG).e(error)
 
@@ -246,6 +255,10 @@ class DownloadDiagnosisKeysTask @Inject constructor(
         data class KeyFilesDownloadFinished(val keyCount: Int, val fileSize: Long) : Progress()
 
         override val primaryMessage = this::class.java.simpleName.toLazyString()
+    }
+
+    class Result : Task.Result{
+        var configChanged = false
     }
 
     class Arguments(
